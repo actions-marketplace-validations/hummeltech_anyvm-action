@@ -1,0 +1,172 @@
+---
+name: Start any VM
+description: Allow running command-line programs via bash shell of VMs provisioned with any VM using the run keyword.
+
+inputs:
+  arch:
+    description: any VM CPU Architecture
+    options:
+      - aarch64
+      - armv7
+      - i386
+      - loongarch64
+      - powerpc64
+      - riscv64
+      - s390x
+      - sparc64
+      - x86_64
+    type: choice
+  cpu:
+    default: 4
+    description: any VM CPUs
+    options:
+      - 2
+      - 4
+      - 8
+    type: choice
+  enable-ipv6:
+    default: false
+    type: boolean
+  mem:
+    default: 4096
+    description: any VM Memory
+    options:
+      - 1024
+      - 2048
+      - 4096
+      - 8192
+    type: choice
+  os:
+    description: any VM os
+    required: true
+    type: string
+  provision-commands:
+    description: Command(s) to run for provisioning any VM (double quotation marks are not allowed)
+    type: string
+  release:
+    description: any VM release
+    type: string
+  ssh-port:
+    default: 10022
+    description: any VM SSH port
+    type: string
+  sync:
+    default: rsync
+    description: any VM sync mode
+    options:
+      - 9p
+      - nfs
+      - rsync
+      - scp
+      - sshfs
+      - sys-nfs
+      - tar
+    type: choice
+
+runs:
+  using: composite
+  steps:
+    - name: Install/Configure any VM Dependencies (Linux)
+      env:
+        DEBIAN_FRONTEND: noninteractive
+      run: |
+        # Install dependencies
+        sudo apt-get --no-install-recommends -y install \
+          ca-certificates \
+          openssh-client \
+          ovmf \
+          qemu-efi-aarch64 \
+          qemu-system-arm \
+          qemu-system-misc \
+          qemu-system-ppc \
+          qemu-system-s390x \
+          qemu-system-sparc \
+          qemu-system-x86 \
+          qemu-utils \
+          u-boot-qemu \
+          xz-utils \
+          zstd
+        # Install anyvm.py
+        pip install anyvm.py
+        # Grant user access to /dev/kvm
+        sudo chown ${USER} /dev/kvm
+        # Install RISC-V 64-bit dependencies
+        if [ "${{ inputs.arch }}" = "riscv64" ]; then
+          sudo apt-get --no-install-recommends -y install \
+            qemu-efi-riscv64 \
+            qemu-system-riscv
+        fi
+      shell: bash
+      if: runner.os == 'Linux'
+
+    - name: Install/Configure any VM Dependencies (macOS)
+      env:
+        DEBIAN_FRONTEND: noninteractive
+      run: |
+        # Install dependencies
+        brew install --force --quiet \
+          anyvm-org/tap/anyvm
+      shell: bash
+      if: runner.os == 'macOS'
+
+    - name: Configure SSH
+      run: |
+        mkdir -p ~/.ssh
+        touch ~/.ssh/config
+        chmod 600 ~/.ssh/config
+        cat >> ~/.ssh/config <<EOF
+        Host *
+          LogLevel=ERROR
+          SendEnv=*
+        EOF
+      shell: bash
+
+    - name: Start any VM
+      run: |
+        anyvm \
+          ${{ inputs.arch != '' && format('--arch {0}', inputs.arch) || '' }} \
+          ${{ inputs.cpu != '' && format('--cpu {0}', inputs.cpu) || '' }} \
+          ${{ inputs.enable-ipv6 && '--enable-ipv6' || '' }} \
+          ${{ inputs.mem != '' && format('--mem {0}', inputs.mem) || '' }} \
+          ${{ inputs.release != '' && format('--release {0}', inputs.release) || '' }} \
+          ${{ inputs.ssh-port != '' && format('--ssh-port {0}', inputs.ssh-port) || '' }} \
+          ${{ inputs.sync != '' && format('--sync {0}', inputs.sync) || '' }} \
+          --detach \
+          --os "${{ inputs.os }}" \
+          --vnc off \
+          -v $(realpath ${{ runner.temp }}/../_actions):$(realpath ${{ runner.temp }}/../_actions) \
+          -v ${{ github.workspace }}:${{ github.workspace }} \
+          -v ${{ runner.temp }}:${{ runner.temp }}
+      shell: bash
+
+    - name: Provision any VM
+      run: |
+        ssh "${{ inputs.ssh-port }}" "sh -c '${{ inputs.provision-commands }}'"
+      shell: bash
+      if: inputs.provision-commands != ''
+
+    - name: Generate /bin/bash override script
+      run: |
+        cat > bash <<EOF
+        #!/bin/bash
+        set -euo pipefail
+        SCRIPT=\$(mktemp)
+        echo "#!/usr/bin/env bash" >> \${SCRIPT}
+        echo "cd \${PWD}" >> \${SCRIPT}
+        echo "set -euo pipefail" >> \${SCRIPT}
+        echo "bash \$@" >> \${SCRIPT}
+        mv \${SCRIPT} ${{ runner.temp }}/command.sh
+        chmod a+x ${{ runner.temp }}/command.sh
+        rsync --archive --delete ${{ github.workspace }}/ "${{ inputs.ssh-port }}":${{ github.workspace }}/
+        rsync --archive --delete ${{ runner.temp }}/ "${{ inputs.ssh-port }}":${{ runner.temp }}/
+        rsync --archive --delete \$(realpath ${{ runner.temp }}/../_actions)/ "${{ inputs.ssh-port }}":\$(realpath ${{ runner.temp }}/../_actions)/
+        ssh "${{ inputs.ssh-port }}" "${{ runner.temp }}/command.sh"
+        EXIT_STATUS=\$?
+        rsync --archive --delete "${{ inputs.ssh-port }}":${{ github.workspace }}/ ${{ github.workspace }}/
+        rsync --archive --delete "${{ inputs.ssh-port }}":${{ runner.temp }}/ ${{ runner.temp }}/
+        rsync --archive --delete "${{ inputs.ssh-port }}":\$(realpath ${{ runner.temp }}/../_actions)/ \$(realpath ${{ runner.temp }}/../_actions)/
+        exit \${EXIT_STATUS}
+        EOF
+        sudo mv bash /usr/local/bin/bash
+        sudo chmod +x /usr/local/bin/bash
+      shell: bash

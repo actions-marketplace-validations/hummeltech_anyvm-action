@@ -1,0 +1,114 @@
+---
+name: Tests
+
+on:
+  push:
+
+jobs:
+  Test:
+    name: ${{ matrix.runs-on }} (${{ matrix.os }})
+    runs-on: ${{ matrix.runs-on }}
+    strategy:
+      matrix:
+        os:
+          - alpine
+          - freebsd
+        runs-on:
+          - macos-15
+          - macos-26
+          - macos-latest
+          - ubuntu-22.04
+          - ubuntu-24.04
+          - ubuntu-26.04
+          - ubuntu-latest
+      fail-fast: false
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set `CPUS`
+        run: |
+          echo "CPUS=$(nproc)" >> ${GITHUB_ENV}
+
+      - name: Set `PROVISION_COMMANDS`
+        run: |
+          if [ "${{ matrix.os }}" = "alpine" ]; then
+            echo "PROVISION_COMMANDS=apk add bash git sudo;" >> ${GITHUB_ENV}
+          fi
+          if [ "${{ matrix.os }}" = "freebsd" ]; then
+            echo "PROVISION_COMMANDS=pkg install --yes bash rsync sudo;" >> ${GITHUB_ENV}
+          fi
+
+      - name: Provision VM
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: ./
+        with:
+          cpu: ${{ env.CPUS }}
+          os: ${{ matrix.os }}
+          provision-commands: ${{ env.PROVISION_COMMANDS }}
+
+      - name: Run Test (/etc/os-release) (VM)
+        run: |
+          source /etc/os-release
+          LOWERCASED_AND_FIRST_NAME=${NAME%% *}
+          LOWERCASED_AND_FIRST_NAME=${LOWERCASED_AND_FIRST_NAME,,}
+          if [ "${LOWERCASED_AND_FIRST_NAME}" = "${{ matrix.os }}" ]; then
+            echo "${LOWERCASED_AND_FIRST_NAME} detected."
+          else
+            echo "${LOWERCASED_AND_FIRST_NAME} not detected."
+            exit 1
+          fi
+        shell: bash --noprofile --norc -euo pipefail {0}
+
+      - name: Run Test (/etc/os-release) (Host) (Linux)
+        run: |
+          source /etc/os-release
+          if [ "${NAME}" = "Ubuntu" ]; then
+            echo "Ubuntu detected."
+          else
+            echo "Ubuntu not detected."
+            exit 1
+          fi
+        shell: /bin/bash --noprofile --norc -euo pipefail {0}
+        if: runner.os == 'Linux'
+
+      - name: Run Test (uname) (Host) (macOS)
+        run: |
+          if [ "$(uname -s)" = "Darwin" ]; then
+            echo "Darwin detected."
+          else
+            echo "Darwin not detected."
+            exit 1
+          fi
+        shell: /bin/bash --noprofile --norc -euo pipefail {0}
+        if: runner.os == 'macOS'
+
+      - name: Prepare Test (working-directory) (VM)
+        run: |
+          mkdir new_working_directory
+        shell: bash --noprofile --norc -euo pipefail {0}
+
+      - name: Run Test (working-directory) (VM)
+        run: |
+          if [ "$(basename ${PWD})" = "new_working_directory" ]; then
+            echo "Expected working directory detected."
+          else
+            echo "Expected working directory not detected."
+            exit 1
+          fi
+        shell: bash --noprofile --norc -euo pipefail {0}
+        working-directory: new_working_directory
+
+      - name: Run Test (env) (VM)
+        env:
+          NEW_ENV_VAR: 1
+        run: |
+          if [ "${NEW_ENV_VAR}" = "1" ]; then
+            echo "Expected variable set."
+          else
+            echo "Expected variable not set."
+            exit 1
+          fi
+        shell: bash --noprofile --norc -euo pipefail {0}
+        working-directory: new_working_directory
