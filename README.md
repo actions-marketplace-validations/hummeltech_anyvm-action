@@ -1,6 +1,6 @@
 # any VM Action
 
-**The value for [runs-on](https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#jobsjob_idruns-on) should be set to either `macos-latest` or `ubuntu-latest` in order to use this action.**
+**The value for [runs-on](https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#jobsjob_idruns-on) should be set to either `macos-latest` or `ubuntu-latest` in order to have the best results with this action.**
 
 This action allows the running of command-line programs via the `bash` shell of VMs provisioned with any VM using the [run](https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#jobsjob_idstepsrun) keyword. This also works with composite actions which exclusively use the `run` keyword (and/or call other composite actions which also do so.)
 
