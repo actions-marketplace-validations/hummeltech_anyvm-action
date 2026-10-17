@@ -72,15 +72,17 @@ runs:
       run: |
         # Install dependencies
         sudo apt-get --no-install-recommends -y install \
+          ${{ inputs.arch == 'loongarch64' && 'qemu-efi-loongarch64' || '' }} \
+          ${{ inputs.arch == 'powerpc64' && 'qemu-system-ppc' || '' }} \
+          ${{ inputs.arch == 'riscv64' && 'qemu-efi-riscv64 qemu-system-riscv' || '' }} \
+          ${{ inputs.arch == 's390x' && 'qemu-system-s390x' || '' }} \
+          ${{ inputs.arch == 'sparc64' && 'qemu-system-sparc' || '' }} \
           ca-certificates \
           openssh-client \
           ovmf \
           qemu-efi-aarch64 \
           qemu-system-arm \
           qemu-system-misc \
-          qemu-system-ppc \
-          qemu-system-s390x \
-          qemu-system-sparc \
           qemu-system-x86 \
           qemu-utils \
           u-boot-qemu \
@@ -88,14 +90,8 @@ runs:
           zstd
         # Install anyvm.py
         pip install anyvm.py
-        # Grant user access to /dev/kvm
-        sudo chown ${USER} /dev/kvm
-        # Install RISC-V 64-bit dependencies
-        if [ "${{ inputs.arch }}" = "riscv64" ]; then
-          sudo apt-get --no-install-recommends -y install \
-            qemu-efi-riscv64 \
-            qemu-system-riscv
-        fi
+        # Grant access to /dev/kvm
+        sudo chmod o+rw /dev/kvm
       shell: bash
       if: runner.os == 'Linux'
 
