@@ -70,6 +70,8 @@ runs:
       env:
         DEBIAN_FRONTEND: noninteractive
       run: |
+        # Update packages list
+        sudo apt-get update
         # Install dependencies
         sudo apt-get --assume-yes --no-install-recommends install \
           ${{ inputs.arch == 'loongarch64' && 'qemu-efi-loongarch64' || '' }} \
